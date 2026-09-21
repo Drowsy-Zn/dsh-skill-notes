@@ -60,14 +60,13 @@ DSH 的技能目录**只把 `name` 和 `description` 渲染给模型**，用于�
 ## 安装
 
 ```sh
+# 从 GitHub 安装
+dsh plugin --profile web add "git+https://github.com/Nan/dsh-skill-notes.git"
+
+# 或在插件市场里搜索 dsh-skill-notes 点安装
+
 # 从本地目录链接安装（开发/自用）
 dsh plugin --profile web add link:/path/to/dsh-skill-notes
-
-# 或从 npm 安装
-dsh plugin --profile web add dsh-skill-notes
-
-# 或从 GitHub 安装
-dsh plugin --profile web add "git+https://github.com/<you>/dsh-skill-notes.git"
 ```
 
 装完**重启 `dsh web`**（或刷新页面，取决于客户端模块是否已重新扫描）。之后它是正式插件，重启后常在，可在 GUI 的插件列表里看到。
@@ -105,7 +104,17 @@ npm test        # 离线冒烟测试，不需要 DSH 在跑
 - `.smoke.mjs` —— 宿主端：真实 cordis `Context` 上 apply、经真 socket 打路由、断言目录内容与路由筛查（非目录路径 404）、坏 JSON 与目录缺失的降级、以及卸载后路由确实注销
 - `.smoke-client.mjs` —— 浏览器端：一个带真实 state 的 React 替身，走完「点开 → 拉目录 → 搜索 → 筛选分类 → 点行插入」整条链路，断言渲染出的按钮文案、行数、徽章，以及 `setDraft` 拿到的确切草稿字符串
 
-两个脚本都不联网、不写你的技能目录，只读 `skill-notes.json` 和 `~/.dsh/skills`。
+两个脚本都不联网、不写你的技能目录，只读 `skill-notes.json` 和 `~/.dsh/skills`。仓库里的 GitHub Actions（`.github/workflows/check.yml`）在 Node 22 与 24 上各跑一遍这两步，外加 `npm pack --dry-run`。
+
+## 发布流程备忘
+
+打算上 [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin) 精选列表——那才是插件市场里能搜到的唯一来源。要点：
+
+- 往那个仓库提 PR，**只加一个文件** `data/plugins/<owner>__<repo>.yml`，别动 README（README 由他们的脚本生成）
+- 他们的 CI 从本仓库 `package.json` 读 `dsh.bundle`，只声明 `dsh.client` 是最常见的被拒原因——本包两个都声明了
+- 仓库需**创建满 1 天**才收（防「提 PR 前几分钟才建好」的仓库）
+- 仓库加 GitHub topic `dsh-plugin`（与本包 keywords 里的一致）
+- 描述必须属实，评审核对代码；`category` 挑最接近的即可
 
 ## 已知边界
 

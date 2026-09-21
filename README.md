@@ -152,6 +152,37 @@ npm run check:notes  # 按 NOTE_RULES 体检你本机的 skill-notes.json（只�
 - 备注文件是 UTF-8 无 BOM 的 JSON；写坏了面板会提示 `备注文件解析失败` 并显示空列表（不会崩）
 - 「自动补备注」依赖用户正在使用的对话模型会照办系统提示里的要求。绝大多数模型都会，但这不是硬保证；面板上的灰色条目和顶部计数是兜底——真没人补的时候你看得见
 
+## 开发笔记：这台机器怎么把代码传上来
+
+写这个插件的过程中踩到一个坑，记下来免得下次再花两小时：**这台机器的 `git push` 走不通**。
+
+```
+$ git push
+fatal: unable to access 'https://github.com/…': Failed to connect to github.com
+port 443 after 21105 ms: Could not connect to server
+```
+
+但并不是网络坏了，只是 `github.com` 这一个域名的 443 端口连不上：
+
+| 目标 | 结果 |
+| --- | --- |
+| `github.com:443`（git 用的就是它） | ✗ 超时 |
+| `api.github.com` | ✓ 200 |
+| `raw.githubusercontent.com` | ✓ 200 |
+| `codeload.github.com` | ✓ 200 |
+| `gh` 命令行工具 | ✗ 装了才有，本机没有 |
+
+所以本仓库的提交不是 `git push` 上去的，而是走 GitHub 官方接口，按「**文件 → 目录树 → 提交 → 移动分支指针**」四步把对象传上去（`POST /git/blobs` → `POST /git/trees` → `POST /git/commits` → `PATCH /git/refs/heads/main`）。这条路走通之后，本地提交和远端提交的树是逐字节一致的，只是提交对象的作者/时间写法不同，所以 sha 不一样。
+
+接口有三个脾气，谁要重写这段代码都会撞上：
+
+- 文件必须先作为 blob 传上去，否则建目录树报 `422 tree.sha … is not a valid blob`
+- **建树只能加和改，删不掉东西**：删文件必须显式写一条 `{ path, mode: '100644', type: 'blob', sha: null }`
+- `base_tree` 得写**远端父提交记录的那棵树**，写本地 git 算出来的同一棵树会被拒：`base_tree is not a valid tree oid`
+- 空仓库（刚建、一个提交都没有）访问接口返回的是 **409 `Git Repository is empty`，不是 404**
+
+这段流程已经整理成一个可复用的技能（`push-to-github`），带 `--check` / `--dry-run` / 推完自动对账，本仓库的最后一次提交就是用它推的。
+
 ## License
 
 MIT

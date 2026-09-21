@@ -104,7 +104,11 @@ npm test        # 离线冒烟测试，不需要 DSH 在跑
 - `.smoke.mjs` —— 宿主端：真实 cordis `Context` 上 apply、经真 socket 打路由、断言目录内容与路由筛查（非目录路径 404）、坏 JSON 与目录缺失的降级、以及卸载后路由确实注销
 - `.smoke-client.mjs` —— 浏览器端：一个带真实 state 的 React 替身，走完「点开 → 拉目录 → 搜索 → 筛选分类 → 点行插入」整条链路，断言渲染出的按钮文案、行数、徽章，以及 `setDraft` 拿到的确切草稿字符串
 
-两个脚本都不联网、不写你的技能目录，只读 `skill-notes.json` 和 `~/.dsh/skills`。仓库里的 GitHub Actions（`.github/workflows/check.yml`）在 Node 22 与 24 上各跑一遍这两步，外加 `npm pack --dry-run`。
+两个脚本都**不联网、不写你的真实技能目录**：断言用的是 `.smoke-fixtures.mjs` 在临时目录里造的一份固定技能目录（4 个技能，其中一个故意没备注），所以数字在任何机器上都一样；你本机的 `~/.dsh/skills` 只在宿主端脚本里做只读展示，不影响通过与否。跑完临时目录会删掉。
+
+找不到 `@deepseek-ai/cordis` 时宿主端脚本会跳过 `apply()` 那一段并明确打印出来，其余部分照跑。
+
+仓库里的 GitHub Actions（`.github/workflows/check.yml`）在 Node 22 与 24 上各跑一遍这两步，外加 `npm pack --dry-run`。
 
 ## 发布流程备忘
 

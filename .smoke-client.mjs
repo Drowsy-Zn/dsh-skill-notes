@@ -7,10 +7,9 @@
  * open -> load -> filter -> pick cycle and read the markup plus the setDraft
  * calls it made.
  */
-import { readdirSync, statSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, readFileSync } from 'node:fs'
 
-const require = process.getBuiltinModule('node:module').createRequire('C:/Users/Nan/AppData/Local/npm-cache/_npx/1e7f6d9597241db0/node_modules/')
+import { EXPECT, makeFixtures } from './.smoke-fixtures.mjs'
 
 const states = new WeakMap()
 let current = null
@@ -71,12 +70,13 @@ const find = (pred) => tree().find(pred)
 const cls = (e) => String(e?.props?.className ?? '')
 
 // --- fetch shim answering the catalog route --------------------------------
-const notesPath = 'C:/Users/Nan/.dsh/skill-notes.json'
-const skillsDir = 'C:/Users/Nan/.dsh/skills'
-const fetched = []
-const notes = JSON.parse(readFileSync(notesPath, 'utf8'))
-const items = readdirSync(skillsDir)
-  .filter((n) => statSync(join(skillsDir, n)).isDirectory() && !n.startsWith('.'))
+// 目录内容来自临时固定数据，跟宿主端用同一份，所以这里的行数、分类数都是定值。
+const fx = makeFixtures()
+const notes = JSON.parse(readFileSync(fx.notesPath, 'utf8'))
+const { readdirSync, statSync } = await import('node:fs')
+const { join } = await import('node:path')
+const items = readdirSync(fx.skillsDir)
+  .filter((n) => statSync(join(fx.skillsDir, n)).isDirectory() && !n.startsWith('.'))
   .map((id) => ({
     id,
     cat: notes[id]?.cat ?? '未备注',
@@ -89,8 +89,9 @@ const catalog = {
   ok: true, items, total: items.length,
   annotated: items.filter((i) => i.annotated).length,
   unannotated: items.filter((i) => !i.annotated).length,
-  added: [], broken: false, notesPath,
+  added: [], broken: false, notesPath: fx.notesPath,
 }
+const fetched = []
 globalThis.fetch = async (url) => {
   fetched.push(url)
   return { status: 200, json: async () => catalog }
@@ -160,9 +161,13 @@ const panelText = () => textOf(find((e) => cls(e).includes('skn-panel')))
 check('面板含技能名', ['xlsx', 'archify', 'task-brief'].map((id) => panelText().includes(id)), [true, true, true])
 check('面板含中文备注', panelText().includes('处理 Excel') || panelText().includes('Excel'), true)
 check('只能手动调用徽章', panelText().includes('只能手动调用'), true)
-check('计数文案', /共 \d+ 个技能/.test(panelText()), true)
-check('可点行数 = 34', findAll((e) => cls(e).includes('skn-item')).length, 34)
-check('分类胶囊数 = 8', findAll((e) => e.type === 'button' && cls(e).includes('skn-chip')).length, 8)
+check('计数文案', panelText().includes('共 ' + EXPECT.total + ' 个技能'), true)
+check('可点行数', findAll((e) => cls(e).includes('skn-item')).length, EXPECT.total)
+const chips = findAll((e) => e.type === 'button' && cls(e).includes('skn-chip')).map(textOf)
+check('分类胶囊集合',
+  chips.map((c) => c.replace(/ \d+$/, '')).sort(),
+  ['全部', ...EXPECT.categories, '未备注'].sort())
+check('「全部」胶囊计数', chips.filter((c) => c === '全部 ' + EXPECT.total), ['全部 ' + EXPECT.total])
 
 // search — first child of a row is the id cell, so read that
 const search = () => find((e) => e.type === 'input' && cls(e).includes('skn-search'))
@@ -182,12 +187,12 @@ search().props.onChange({ target: { value: '' } })
 
 // category chip
 const chipNamed = (prefix) => find((e) => e.type === 'button' && cls(e).includes('skn-chip') && textOf(e).startsWith(prefix))
-check('「全部」胶囊', textOf(chipNamed('全部')), '全部 34')
-check('「作图」胶囊', textOf(chipNamed('作图')), '作图 6')
+check('「全部」胶囊', textOf(chipNamed('全部')), '全部 ' + EXPECT.total)
+check('「作图」胶囊', textOf(chipNamed('作图')), '作图 1')
 chipNamed('作图').props.onClick()
-check('筛「作图」后行数', findAll((e) => cls(e).includes('skn-item')).length, 6)
+check('筛「作图」后行数', findAll((e) => cls(e).includes('skn-item')).length, 1)
 chipNamed('全部').props.onClick()
-check('回到全部行数', findAll((e) => cls(e).includes('skn-item')).length, 34)
+check('回到全部行数', findAll((e) => cls(e).includes('skn-item')).length, EXPECT.total)
 
 // pick a row: empty draft -> no leading space
 actions.calls.length = 0
@@ -251,6 +256,31 @@ check('缺 inputActions 仍关闭面板', out4.filter((e) => cls(e).includes('sk
 let threw2 = null
 try { registered.exports.apply({ get: () => undefined, effect: (fn) => fn() }) } catch (err) { threw2 = String(err && err.message) }
 check('缺 slots 服务不抛错', threw2, null)
+
+// --- 有一个技能还没备注时：顶部提示 + 灰斜体占位 ----------------------------
+const unannotatedCatalog = {
+  ...catalog,
+  unannotated: EXPECT.unannotated,
+  items: items.map((i) => (i.id === EXPECT.unannotatedId
+    ? { ...i, annotated: false, cat: '未备注', note: '（已自动加入，还没有中文备注 —— 在对话里说“给 ' + EXPECT.unannotatedId + ' 加备注”即可补上）', trig: '' }
+    : i)),
+}
+globalThis.fetch = async (url) => { fetched.push(url); return { status: 200, json: async () => unannotatedCatalog } }
+const button5 = injected.render({ inputActions: actions, input: { draft: '' }, session: null })
+const out5 = []
+walk(button5, out5)
+out5.find((e) => e.type === 'button' && textOf(e) === '📖 技能速查').props.onClick()
+await new Promise((r) => setTimeout(r, 20))
+out5.length = 0
+walk(button5, out5)
+const text5 = out5.map(textOf).join('\n')
+check('顶部提示未备注数量', text5.includes('有 ' + EXPECT.unannotated + ' 个新技能还没有备注'), true)
+check('提示渲染成 skn-tip', out5.some((e) => cls(e).includes('skn-tip')), true)
+check('未备注行的说明是灰斜体（skn-note todo）', out5.some((e) => cls(e) === 'skn-note todo'), true)
+check('未备注行提示怎么补备注', text5.includes('加备注'), true)
+
+fx.release()
+check('固定数据临时目录已清理', existsSync(fx.tmp), false)
 
 console.log(failures === 0 ? '\n客户端冒烟测试全部通过' : `\n${failures} 项不符`)
 process.exitCode = failures === 0 ? 0 : 1

@@ -1,0 +1,11 @@
+# dsh-skill-notes bundle patch: contributes the plugin row into the host
+# composition when this package is installed via `dsh plugin add`.
+#
+# The plugin is HOST-PLANE: the node half (exports ".") runs in the host
+# process — it reads the skills directory and serves the catalog over a
+# webServer route plus a system-prompt section. The `dsh.client` declaration
+# in package.json makes the browser half (exports "./client") load in the web
+# GUI, where it registers one control in the composer tool row.
+- insert:
+    - id: dsh-skill-notes
+      name: 'dsh-skill-notes'

@@ -1,0 +1,57 @@
+{
+  "name": "dsh-skill-notes",
+  "version": "0.1.0",
+  "description": "DSH Web GUI 技能速查：在输入框工具行加一个按钮，用中文一句话说明每个技能是干什么的、什么时候用；点击任意一行把 /技能名 插进输入框。备注存在一个普通 JSON 文件里，随技能自动增补，可手改也可让 agent 补写。",
+  "license": "MIT",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "cordis",
+    "plugin",
+    "skill",
+    "skills",
+    "notes",
+    "dsh-plugin"
+  ],
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./client": "./client/bundle.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  },
+  "files": [
+    "src",
+    "client",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE",
+    "screenshots.json"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1"
+  },
+  "scripts": {
+    "check": "node --check src/index.js && node --check client/bundle.js",
+    "test": "node .smoke.mjs && node .smoke-client.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CHANGE_ME/dsh-skill-notes.git"
+  },
+  "homepage": "https://github.com/CHANGE_ME/dsh-skill-notes#readme",
+  "bugs": {
+    "url": "https://github.com/CHANGE_ME/dsh-skill-notes/issues"
+  }
+}

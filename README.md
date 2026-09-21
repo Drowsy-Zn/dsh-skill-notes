@@ -183,6 +183,8 @@ port 443 after 21105 ms: Could not connect to server
 
 这段流程已经整理成一个可复用的技能（`push-to-github`），带 `--check` / `--dry-run` / 推完自动对账，本仓库的最后一次提交就是用它推的。
 
+顺手解决的另一个小问题：提交对象是「照着本地能重建的样子」生成的（作者、提交者、日期都显式给），所以加 `--sync-local` 时本地能自己把同一个提交拼出来、再把分支指针挪过去，**不需要 `git fetch`**（这台机器上它也跑不通）。结果就是本地、`origin/main`、远端三处的 sha 完全一致，`git status` 干净。
+
 ## License
 
 MIT

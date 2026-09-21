@@ -5,7 +5,7 @@
  * 真实的 ~/.dsh/skills 只做只读展示，不参与判定。
  */
 import { createServer } from 'node:http'
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { EXPECT, findCordis, makeFixtures } from './.smoke-fixtures.mjs'
@@ -16,13 +16,21 @@ const fx = makeFixtures()
 const realHome = process.env.DSH_HOME
 process.env.DSH_HOME = fx.tmp
 
-const { apply, inject, buildCatalog } = await import(new URL('./src/index.js', import.meta.url))
+const { apply, inject, buildCatalog, NOTE_RULES } = await import(new URL('./src/index.js', import.meta.url))
 
 let bad = 0
 const check = (label, got, want) => {
   const ok = JSON.stringify(got) === JSON.stringify(want)
   if (!ok) bad += 1
   console.log(`${ok ? 'ok ' : 'BAD'} ${label}${ok ? '' : `  got ${JSON.stringify(got)} want ${JSON.stringify(want)}`}`)
+}
+const note = (text) => console.log('     ' + text)
+
+/** 往指定技能目录里塞一个新技能，用来验证「新技能出现 → 提示 → 补完备注 → 提示消失」。 */
+function addSkill(dir, name, description, extra = '') {
+  mkdirSync(join(dir, name), { recursive: true })
+  writeFileSync(join(dir, name, 'SKILL.md'),
+    `---\nname: ${name}\ndescription: ${description}\n${extra}---\n\n# ${name}\n`, 'utf8')
 }
 
 let cordisDir
@@ -34,25 +42,20 @@ try {
   const first = buildCatalog(fx.skillsDir, fx.notesPath)
   console.log('\n[固定数据] ok/total/annotated/unannotated/broken =',
     first.ok, first.total, first.annotated, first.unannotated, first.broken)
-  console.log('[固定数据] added =', JSON.stringify(first.added))
   check('固定数据：ok', first.ok, true)
   check('固定数据：总数', first.total, EXPECT.total)
   check('固定数据：已备注数', first.annotated, EXPECT.total - EXPECT.unannotated)
   check('固定数据：未备注数', first.unannotated, EXPECT.unannotated)
-  check('固定数据：自动登记了 brand', first.added, [EXPECT.unannotatedId])
+  check('固定数据：未备注的是哪个技能', first.pending.map((p) => p.id), [EXPECT.unannotatedId])
+  check('固定数据：未备注项带 SKILL.md 路径', first.pending[0].path, join(fx.skillsDir, EXPECT.unannotatedId, 'SKILL.md'))
   check('固定数据：备注文件不被判为坏', first.broken, false)
+  check('固定数据：未备注项在列表里标成 annotated=false',
+    first.items.filter((i) => !i.annotated).map((i) => i.id), [EXPECT.unannotatedId])
 
   const reparsed = JSON.parse(readFileSync(fx.notesPath, 'utf8'))
-  check('固定数据：brand 已被写进备注文件且分类为未备注', reparsed[EXPECT.unannotatedId]?.cat, '未备注')
+  check('固定数据：已存在的备注文件不被改写（brand 仍不在文件里）', Object.hasOwn(reparsed, EXPECT.unannotatedId), false)
   check('固定数据：原条目未被改动', reparsed.xlsx,
     { cat: '文档表格', note: '处理 Excel、CSV 表格文件。', trig: '表格、Excel、CSV' })
-
-  // 再跑一遍：这次没有新技能，added 必须为空（幂等）；brand 已在文件里，所以不再算未备注
-  const second = buildCatalog(fx.skillsDir, fx.notesPath)
-  check('固定数据：二次构建无新增', second.added, [])
-  check('固定数据：二次构建后未备注归零', second.unannotated, 0)
-  check('固定数据：两次构建的技能集合一致', second.items.map((i) => i.id), first.items.map((i) => i.id))
-  check('固定数据：两次构建的分类一致', second.items.map((i) => i.cat), first.items.map((i) => i.cat))
 
   check('固定数据：manualOnly 只认 disable-model-invocation',
     first.items.filter((i) => i.manualOnly).map((i) => i.id), [EXPECT.manualOnly])
@@ -61,6 +64,25 @@ try {
   check('固定数据：id 无重复', new Set(first.items.map((i) => i.id)).size, EXPECT.total)
   check('固定数据：分类去重后的集合',
     [...new Set(first.items.map((i) => i.cat))].sort(), [...EXPECT.categories, '未备注'].sort())
+
+  // 把缺的备注补上（模拟 agent 写完），再构建一次：未备注必须归零
+  const filled = { ...reparsed, [EXPECT.unannotatedId]: { cat: '其他', note: '临时技能。', trig: '临时' } }
+  writeFileSync(fx.notesPath, `${JSON.stringify(filled, null, 2)}\n`, 'utf8')
+  const second = buildCatalog(fx.skillsDir, fx.notesPath)
+  check('补完备注后未备注归零', second.unannotated, 0)
+  check('补完备注后 pending 为空', second.pending, [])
+  check('两次构建的技能集合一致', second.items.map((i) => i.id), first.items.map((i) => i.id))
+
+  // --- 冷启动：备注文件根本不存在 ------------------------------------------
+  const coldSkills = join(fx.tmp, 'cold-skills')
+  addSkill(coldSkills, 'solo', 'A single skill for the cold start case.')
+  const coldPath = join(fx.tmp, 'cold.json')
+  const cold = buildCatalog(coldSkills, coldPath)
+  check('冷启动：全部算未备注', [cold.ok, cold.unannotated], [true, 1])
+  check('冷启动：写回了备注文件', existsSync(coldPath), true)
+  check('冷启动：文件里是「未备注」占位entry', JSON.parse(readFileSync(coldPath, 'utf8')).solo?.cat, '未备注')
+  check('冷启动：占位 entry 出现在列表里',
+    cold.items[0].annotated, false)
 
   // --- 降级路径 ------------------------------------------------------------
   const brokenPath = join(fx.tmp, 'broken.json')
@@ -75,7 +97,7 @@ try {
 
   const noSkills = buildCatalog(join(fx.tmp, 'no-such-skills'), join(fx.tmp, 'x.json'))
   check('技能目录不存在时 ok=false 且带 error', [noSkills.ok, noSkills.items.length, typeof noSkills.error === 'string'], [false, 0, true])
-  console.log('     error =', noSkills.error)
+  note('error = ' + noSkills.error)
 
   // --- 真实环境：只读展示，不参与判定 --------------------------------------
   const realSkills = join(realHome ?? join(process.env.USERPROFILE ?? process.env.HOME ?? '', '.dsh'), 'skills')
@@ -111,7 +133,11 @@ try {
     const ctx = new Context()
     ctx.provide('webServer', { register(route) { routes.push(route); return () => { disposed += 1 } } })
     const sections = []
-    ctx.provide('systemPrompt', { section(desc) { sections.push(desc); return () => {} } })
+    const contexts = []
+    ctx.provide('systemPrompt', {
+      section(desc) { sections.push(desc); return () => {} },
+      context(desc) { contexts.push(desc); return () => {} },
+    })
 
     let applied = true
     try {
@@ -125,9 +151,52 @@ try {
     if (applied) {
       check('注册了 1 条路由', routes.length, 1)
       check('路由是 prefix /dsh-skill-notes', [routes[0]?.kind, routes[0]?.path], ['prefix', '/dsh-skill-notes'])
-      check('注入 1 个 prompt 段', sections.length, 1)
-      check('prompt 段名与顺序', [sections[0]?.name, sections[0]?.order], ['plugin:skill-notes', 150])
-      check('prompt 段提到了备注文件', /skill-notes\.json/.test(String(sections[0]?.text ?? '')), true)
+      check('注入 1 个静态 prompt 段', sections.length, 1)
+      check('静态段名与顺序', [sections[0]?.name, sections[0]?.order], ['plugin:skill-notes', 150])
+      const sectionText = String(sections[0]?.text ?? '')
+      check('静态段提到备注文件路径', sectionText.includes(join(fx.tmp, 'skill-notes.json')), true)
+      check('静态段交代了三个字段', ['cat', 'note', 'trig'].every((k) => sectionText.includes(k)), true)
+      // 写法统一靠的是 NOTE_RULES：规则、示例、可审计的边界都从它渲染出来
+      check('NOTE_RULES 有规则列表', Array.isArray(NOTE_RULES.rules) && NOTE_RULES.rules.length >= 5, true)
+      check('NOTE_RULES 的示例都带 cat/note/trig',
+        NOTE_RULES.examples.every((e) => ['id', 'cat', 'note', 'trig'].every((k) => typeof e[k] === 'string' && e[k] !== '')), true)
+      check('静态段把示例原文也带上（agent 能直接照抄）',
+        NOTE_RULES.examples.every((e) => sectionText.includes(e.note) && sectionText.includes(e.trig)), true)
+      check('静态段要求 trig 至少 3 个词', sectionText.includes('3~5'), true)
+      // 规则自己要和边界自洽：示例必须过得去自己的检查，否则 agent 照抄就会被审计脚本挑出来
+      const { limits } = NOTE_RULES
+      const exampleIssues = []
+      for (const e of NOTE_RULES.examples) {
+        if (e.note.length < limits.minNoteLength || e.note.length > limits.maxNoteLength) {
+          exampleIssues.push(`${e.id}: note 长度 ${e.note.length}`)
+        }
+        const terms = e.trig.split(/[、,，\/|]/).map((t) => t.trim()).filter(Boolean)
+        if (terms.length < limits.minTrigTerms) exampleIssues.push(`${e.id}: trig 只有 ${terms.length} 个`)
+        if (limits.forbiddenTerms.some((t) => e.note.includes(t))) exampleIssues.push(`${e.id}: note 有内部术语`)
+      }
+      check('示例本身符合自己定的边界', exampleIssues, [])
+
+      check('注册了 1 个动态提示', contexts.length, 1)
+      check('动态提示名与顺序', [contexts[0]?.name, contexts[0]?.order], ['plugin:skill-notes:pending', 210])
+      check('动态提示是函数（每次组装现算）', typeof contexts[0]?.text, 'function')
+
+      const notice = contexts[0].text
+      check('一切都有备注时提示为空（不占 token）', notice(), '')
+
+      // 新装一个技能：下一次组装必须点名它
+      addSkill(fx.skillsDir, 'zebra', 'Zebra stripes for the newly installed skill case.')
+      const after = notice()
+      console.log('\n[新增技能后的提示]\n' + after.split('\n').map((l) => '     ' + l).join('\n'))
+      check('新技能出现后提示非空', after.length > 0, true)
+      check('提示点名新技能', after.includes('zebra'), true)
+      check('提示给出该技能的 SKILL.md 路径', after.includes(join(fx.skillsDir, 'zebra', 'SKILL.md')), true)
+      check('提示要求补备注且不打扰用户', after.includes('你自己顺手做完就行'), true)
+      check('提示带上了备注文件路径', after.includes(join(fx.tmp, 'skill-notes.json')), true)
+
+      // agent 补完：提示必须立刻消失（未备注结果不进缓存）
+      const nowNotes = JSON.parse(readFileSync(fx.notesPath, 'utf8'))
+      writeFileSync(fx.notesPath, `${JSON.stringify({ ...nowNotes, zebra: { cat: '其他', note: '斑马测试技能。', trig: '斑马' } }, null, 2)}\n`, 'utf8')
+      check('补齐后提示立刻消失', notice(), '')
 
       // 经真 socket 打一次目录接口（被测模块已按固定数据里的 DSH_HOME 解析路径）
       const server = createServer((req, res) => routes[0].handler(req, res))
@@ -141,11 +210,9 @@ try {
       check('cache-control: no-store', response.headers.get('cache-control'), 'no-store')
       check('走 DSH_HOME 解析备注文件', data.notesPath, join(fx.tmp, 'skill-notes.json'))
       check('接口返回 ok', data.ok, true)
-      check('接口返回的技能数', data.total, EXPECT.total)
-      // 前面那轮已把 brand 自动登记进备注文件，所以这里的未备注必须是 0：
-      // 恰好证明「登记过的不再重复报未备注」
+      check('接口返回的技能数', data.total, EXPECT.total + 1)
       check('接口返回的未备注数', data.unannotated, 0)
-      check('接口返回的 added 为空', data.added, [])
+      check('接口不再返回 added 字段', Object.hasOwn(data, 'added'), false)
 
       for (const [probe, want] of [
         ['/dsh-skill-notes', 200],

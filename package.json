@@ -43,7 +43,8 @@
   },
   "scripts": {
     "check": "node --check src/index.js && node --check client/bundle.js",
-    "test": "node .smoke.mjs && node .smoke-client.mjs"
+    "test": "node .smoke.mjs && node .smoke-client.mjs",
+    "check:notes": "node .check-notes.mjs"
   },
   "repository": {
     "type": "git",

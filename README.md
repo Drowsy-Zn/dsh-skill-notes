@@ -1,4 +1,4 @@
-# dsh-skill-notes · 技能速查
+﻿# dsh-skill-notes · 技能速查
 
 给 [DeepSeek Harness](https://github.com/deepseek-ai) Web GUI 加一个**技能速查面板**：在输入框工具行点一下，就能看到每个技能**用中文一句话说明是干什么的**，点任意一行直接把 `/技能名` 插进输入框。
 
@@ -188,3 +188,6 @@ port 443 after 21105 ms: Could not connect to server
 ## License
 
 MIT
+
+> 本地对齐是 --sync-local 顺手做的：提交对象的作者/提交者/日期都显式给全，本地就能自己拼出同一个 sha，不用 git fetch。
+

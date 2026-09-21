@@ -61,7 +61,7 @@ DSH 的技能目录**只把 `name` 和 `description` 渲染给模型**，用于�
 
 ```sh
 # 从 GitHub 安装
-dsh plugin --profile web add "git+https://github.com/Nan/dsh-skill-notes.git"
+dsh plugin --profile web add "git+https://github.com/Drowsy-Zn/dsh-skill-notes.git"
 
 # 或在插件市场里搜索 dsh-skill-notes 点安装
 

@@ -47,10 +47,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Nan/dsh-skill-notes.git"
+    "url": "git+https://github.com/Drowsy-Zn/dsh-skill-notes.git"
   },
-  "homepage": "https://github.com/Nan/dsh-skill-notes#readme",
+  "homepage": "https://github.com/Drowsy-Zn/dsh-skill-notes#readme",
   "bugs": {
-    "url": "https://github.com/Nan/dsh-skill-notes/issues"
+    "url": "https://github.com/Drowsy-Zn/dsh-skill-notes/issues"
   }
 }

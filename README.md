@@ -191,5 +191,4 @@ port 443 after 21105 ms: Could not connect to server
 
 MIT
 
-epair-local.mjs 能照远端记录把树和提交补齐。
 > 本地对齐这条路径现在真的稳了：挪指针前会先确认本地有这条提交、也有父提交的树；万一缺对象，`repair-local.mjs` 能照远端记录把树和提交补齐。

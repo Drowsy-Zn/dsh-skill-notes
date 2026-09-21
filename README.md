@@ -181,14 +181,44 @@ port 443 after 21105 ms: Could not connect to server
 - `base_tree` 得写**远端父提交记录的那棵树**，写本地 git 算出来的同一棵树会被拒：`base_tree is not a valid tree oid`
 - 空仓库（刚建、一个提交都没有）访问接口返回的是 **409 `Git Repository is empty`，不是 404**
 
-这段流程已经整理成一个可复用的技能（`push-to-github`），带 `--check` / `--dry-run` / 推完自动对账，本仓库的最后一次提交就是用它推的。
+这一段流程已经整理成一个可复用的技能（`push-to-github`），带 `--check` / `--dry-run` / 推完自动对账，本仓库的改动就是用它推的。
 
-顺手解决的另一个小问题：提交对象是「照着本地能重建的样子」生成的（作者、提交者、日期都显式给全），所以加 `--sync-local` 时本地能自己把同一个提交拼出来、再把分支指针挪过去，**不需要 `git fetch`**（这台机器上它也跑不通）。结果就是本地、`origin/main`、远端三处的 sha 完全一致，`git status` 干净。
+顺手解决的另一个问题：提交对象是「照着本地能重建的样子」生成的（作者、提交者、日期都显式给全），所以加 `--sync-local` 时本地能自己把同一个提交拼出来、再把分支指针挪过去，**不需要 `git fetch`**（这台机器上它也跑不通）。结果就是本地、`origin/main`、远端三处的 sha 完全一致，`git status` 干净。
 
 中间查得最久的一个坑：日期。给接口发带 `+08:00` 的日期，GitHub 存下来的提交里时间会是 `1790020592 +0000` —— **时区被它统一改成了 UTC**，于是本地按 `+0800` 拼出来的 sha 永远对不上（要看差别得 `git cat-file commit <sha>`）。现在脚本**直接按 UTC 发**，两边就一致了。另外提交正文末尾**必须有且只有一个换行**，少一个 sha 也会变。
+
+### 对齐本地这一步，顺序错了会废掉仓库
+
+`--sync-local` 的第一版是「拼出提交 → 挪指针」，漏了最关键的一步：**推送时那棵树是 GitHub 那边生成的，本地从来没有**。
+指针一挪，HEAD 就指向一棵不存在的树，`git status` 直接报
+
+```
+error: bad tree object HEAD
+```
+
+而且想挪回去都做不到（`reset` 也要读那棵树）。正确的顺序是**先补齐、再挪指针**：
+
+1. 缺树 → 照接口那份递归清单分层重建（`git mktree` **一次只肯建一层**，带斜杠的路径会被拒：`fatal: path .github/workflows/check.yml contains slash`）
+2. 缺提交对象 → 原样拼一遍（`git hash-object -t commit -w`）
+3. 补齐之后才动 `refs/heads`、`refs/remotes/origin`，接着 `git reset --mixed -q HEAD` 刷暂存区（不刷的话 `git status` 会把刚推的内容显示成待提交，状态是 `MM`）
+4. 最后跑一次 `git status` 确认干净
+
+真弄坏了能修：`repair-local.mjs <仓库目录>` 照远端的提交和递归清单，在本地把树和提交一层层重建出来再把指针挪回去。修完跑 `git fsck --no-progress` 确认没有 `missing` / `broken`。
+
+重建提交时还有个容易读错字段的地方：提交对象里 author 和 committer 写的是同一个时间，**日期要用 `committer.date`**（用 `author.date` 会在某些情况下读到 undefined，报 `Cannot read properties of undefined (reading 'getTime')`）。
+
+### 判断存在性：别用 `rev-parse`
+
+`git rev-parse --verify --quiet <不存在的 sha>` **会把 sha 原样回显、退出码还是 0**。拿它当存在性判断会误判（踩过：以为树在，挪完指针直接 `bad tree object`）。要用 `git cat-file -e`（不存在时退出码 1）。
+
+### 核验远端内容走 api，别走 raw
+
+`raw.githubusercontent.com` 这段不稳（实测 node 的 `fetch` 报 `UND_ERR_CONNECT_TIMEOUT`）。核验远端文件用 `GET /repos/{repo}/contents/{path}`（返回 base64）。
+
+### 在 pwsh 里干活的两个坑
+
+- 写文件内容时，**pwsh 双引号字符串里的反引号是转义符**：`"…，\`repair-local.mjs\` 能…"` 会把 `\`r` 吃掉变成 `epair-local.mjs`，整行还会跟上一行粘在一起。要拼反引号用 `[char]96`。
 
 ## License
 
 MIT
-
-> 本地对齐这条路径现在真的稳了：挪指针前会先确认本地有这条提交、也有父提交的树；万一缺对象，`repair-local.mjs` 能照远端记录把树和提交补齐。

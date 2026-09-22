@@ -9,6 +9,12 @@
  * Registered through the client module system's classic-script factory form;
  * `require` resolves platform seed words only (react), so this file stays a
  * single self-contained script with no build step.
+ *
+ * `inject` is not decoration: the shell mounts this half as a cordis plugin and
+ * cordis delivers a service to a plugin ONLY when the plugin declares it
+ * (every declared name must be available, cordis/lib/index.js:1316 _refresh).
+ * Without `inject: ['slots']` the hook still runs, `ctx.get('slots')` is
+ * undefined, and the composer gets no control at all — a silent failure.
  */
 window.__ModuleLoader__.load({
   id: "dsh-skill-notes",
@@ -233,9 +239,17 @@ window.__ModuleLoader__.load({
     function apply(ctx) {
       var slots = ctx.get('slots')
       if (slots === undefined) {
+        // Declared in `inject`, so this should be unreachable; if it ever fires,
+        // leave a trace in the page instead of failing silently.
         console.error('[dsh-skill-notes] slots 服务未挂载，浏览器端不注册任何内容')
+        try {
+          document.documentElement.setAttribute('data-dsh-skill-notes-error', 'slots-missing')
+        } catch (error) { /* nothing else we can do */ }
         return
       }
+      try {
+        document.documentElement.setAttribute('data-dsh-skill-notes-ready', '1')
+      } catch (error) { /* ignore */ }
       ctx.effect(function () {
         var style = document.createElement('style')
         style.setAttribute('data-dsh-skill-notes', '')
@@ -251,6 +265,6 @@ window.__ModuleLoader__.load({
       })
     }
 
-    return { apply: apply }
+    return { inject: ['slots'], apply: apply }
   },
 })

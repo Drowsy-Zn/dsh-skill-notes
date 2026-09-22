@@ -1,6 +1,6 @@
 {
   "name": "dsh-skill-notes",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "DSH Web GUI 技能速查：在输入框工具行加一个按钮，用中文一句话说明每个技能是干什么的、什么时候用；点击任意一行把 /技能名 插进输入框。备注存在一个普通 JSON 文件里，随技能自动增补，可手改也可让 agent 补写。",
   "license": "MIT",
   "keywords": [

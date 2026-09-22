@@ -107,9 +107,11 @@ globalThis.window = {
   },
 }
 const appended = []
+const htmlAttributes = {}
 globalThis.document = {
   createElement: () => ({ setAttribute() {}, remove() { this.removed = true }, style: {}, textContent: '' }),
   head: { appendChild(node) { appended.push(node) } },
+  documentElement: { setAttribute(name, value) { htmlAttributes[name] = value } },
 }
 await import(new URL('./client/bundle.js', import.meta.url))
 
@@ -121,7 +123,11 @@ const check = (label, got, want) => {
 }
 
 check('模块 id', registered.id, 'dsh-skill-notes')
-check('导出面', Object.keys(registered.exports), ['apply'])
+// The shell mounts this half as a cordis plugin, and cordis delivers a service
+// only to a plugin that declares it — so the declared surface is load-bearing,
+// not cosmetic. Dropping 'slots' here is what made the control invisible.
+check('导出面', Object.keys(registered.exports), ['inject', 'apply'])
+check('声明了 slots 依赖', registered.exports.inject, ['slots'])
 check('apply 是函数', typeof registered.exports.apply, 'function')
 
 // --- mount through the real slot contract ---------------------------------
@@ -252,10 +258,12 @@ out4.length = 0
 walk(button4, out4)
 check('缺 inputActions 仍关闭面板', out4.filter((e) => cls(e).includes('skn-backdrop')).length, 0)
 
-// slots service absent -> apply must not throw
+// slots service absent -> apply must not throw, and must leave a visible trace
 let threw2 = null
 try { registered.exports.apply({ get: () => undefined, effect: (fn) => fn() }) } catch (err) { threw2 = String(err && err.message) }
 check('缺 slots 服务不抛错', threw2, null)
+check('缺 slots 服务留下可见痕迹', htmlAttributes['data-dsh-skill-notes-error'], 'slots-missing')
+check('挂载成功时留下面包屑', htmlAttributes['data-dsh-skill-notes-ready'], '1')
 
 // --- 有一个技能还没备注时：顶部提示 + 灰斜体占位 ----------------------------
 const unannotatedCatalog = {

@@ -151,6 +151,35 @@ npm run check:notes  # 按 NOTE_RULES 体检你本机的 skill-notes.json（只�
 - `SKILL.md` 的解析是轻量 YAML 子集（只取 `name` / `description` / `disable-model-invocation`），不是完整 YAML 解析器
 - 备注文件是 UTF-8 无 BOM 的 JSON；写坏了面板会提示 `备注文件解析失败` 并显示空列表（不会崩）
 - 「自动补备注」依赖用户正在使用的对话模型会照办系统提示里的要求。绝大多数模型都会，但这不是硬保证；面板上的灰色条目和顶部计数是兜底——真没人补的时候你看得见
+- 浏览器端声明的是**必选**依赖 `inject: ['slots']`。`slots` 服务消失时这个半边会一直等（不会崩、也不会注册），页面留下面包屑 `data-dsh-skill-notes-error="slots-missing"`
+
+## 踩过的坑：浏览器端不声明 inject，按钮会静默消失
+
+这个插件在 0.4.2 之前有个很难查的问题：**装在插件列表里、宿主端接口也正常，但输入框那一行什么都不出现**。原因是浏览器端工厂当时只导出了 `apply`：
+
+```js
+return { apply: apply }            // ← 有问题
+```
+
+DSH 会把每个客户端 bundle 导出的那半边当 cordis 插件挂到框架自己的上下文里，而 **cordis 只把服务交给在 `inject` 里声明过的插件**（`cordis/lib/index.js` 的 `_refresh`：`inject` 里任何一个名字拿不到，插件的 epoch 就是空的、根本不会执行）。所以 `ctx.get('slots')` 永远是 `undefined`，代码走到那一句就 `return`，没有任何 UI 痕迹——看起来就像插件没被加载。
+
+同一台机器上能正常显示的 `@weibaohui/skills-management` 之所以没事，是因为它的导出面里有 `inject: ['slots', 'locale']`。
+
+修法就是补上这一行：
+
+```js
+return { inject: ['slots'], apply: apply }
+```
+
+三个容易误判的点：
+
+- **`inject` 没有「可选」写法**。`{ optional: ['slots'] }` 不是可选依赖，而是被当成「有个叫 `optional` 的服务，配置是 `['slots']`」，等于声明了一个永远不存在的服务。`cordis/lib/index.js` 的 `Inject.resolve` 只认数组或「服务名 → 拦截配置」的对象
+- **`package.json` 里 `dsh.client.inject` 是另一回事**：那是模块图里排在前面加载的**包名**（比如 `dsh-skill-picker` 就列的是包名），跟运行时拿服务没关系
+- **别靠 `ctx.get()` 兜底**。真漏了声明，`get` 只会还你一个 `undefined`，什么都不会说。现在的代码在拿到 `undefined` 时往 `<html>` 上写一个 `data-dsh-skill-notes-error` 属性，挂载成功写 `data-dsh-skill-notes-ready="1"`，页面里一眼能看出来
+
+`.smoke-client.mjs` 把「导出面必须是 `['inject', 'apply']`」和「少了 `slots` 要留痕」都钉成了断言，改回去会直接测试失败。
+
+顺带说明为什么这个坑格外难查：客户端 bundle 的路由在 `rev` 对不上时**故意返回 404**（`dsh-client-modules` 的 `bundleResource` 只在 `this.responses` 里查当前那一代的 URL），所以手工去 `GET /plugins/dsh-skill-notes/client.js` 探活必然 404，跟插件坏没坏无关。
 
 ## 开发笔记：这台机器怎么把代码传上来
 
